@@ -1,0 +1,262 @@
+import { useState, useRef } from "react";
+import { useParams, Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import { Upload, ArrowLeft, Trash2, AlertCircle, FileSpreadsheet } from "lucide-react";
+import * as XLSX from "xlsx";
+import Papa from "papaparse";
+import { 
+  useGetExamById, 
+  getGetExamByIdQueryKey,
+  useBulkUploadMcqs,
+  useDeleteMcq,
+  McqInputCorrectOption
+} from "@workspace/api-client-react";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+
+export function FacultyExamDetail() {
+  const { id } = useParams();
+  const examId = parseInt(id || "0");
+  
+  const { data, isLoading } = useGetExamById(examId, { query: { enabled: !!examId } });
+  const bulkMut = useBulkUploadMcqs();
+  const deleteMcqMut = useDeleteMcq();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  
+  const [parseError, setParseError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (isLoading) return <div className="p-8 text-center">Loading...</div>;
+  if (!data) return <div className="p-8 text-center text-red-600">Exam not found</div>;
+
+  const { exam, mcqs } = data;
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setParseError(null);
+    
+    try {
+      if (file.name.endsWith('.csv')) {
+        Papa.parse(file, {
+          header: true,
+          skipEmptyLines: true,
+          complete: (results) => processParsedData(results.data),
+          error: (error) => setParseError(`CSV Parse Error: ${error.message}`)
+        });
+      } else if (file.name.match(/\.(xlsx|xls)$/)) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const bstr = evt.target?.result;
+            const wb = XLSX.read(bstr, { type: 'binary' });
+            const wsname = wb.SheetNames[0];
+            const ws = wb.Sheets[wsname];
+            const data = XLSX.utils.sheet_to_json(ws);
+            processParsedData(data);
+          } catch (err: any) {
+            setParseError(`Excel Parse Error: ${err.message}`);
+          }
+        };
+        reader.readAsBinaryString(file);
+      } else {
+        setParseError("Invalid file type. Please upload CSV or Excel (.xlsx)");
+      }
+    } catch (err: any) {
+      setParseError(err.message);
+    }
+    
+    // reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const processParsedData = (data: any[]) => {
+    try {
+      const parsedMcqs = data.map((row: any, i: number) => {
+        if (!row.questionText || !row.optionA || !row.optionB || !row.optionC || !row.optionD || !row.correctOption) {
+          throw new Error(`Row ${i + 1} is missing required fields. Ensure questionText, optionA-D, and correctOption exist.`);
+        }
+        
+        const correct = String(row.correctOption).toUpperCase().trim();
+        if (!["A", "B", "C", "D"].includes(correct)) {
+          throw new Error(`Row ${i + 1}: correctOption must be A, B, C, or D`);
+        }
+
+        return {
+          questionNumber: parseInt(row.questionNumber) || i + 1,
+          questionText: String(row.questionText),
+          optionA: String(row.optionA),
+          optionB: String(row.optionB),
+          optionC: String(row.optionC),
+          optionD: String(row.optionD),
+          correctOption: correct as McqInputCorrectOption
+        };
+      });
+
+      bulkMut.mutate({ id: examId, data: { mcqs: parsedMcqs } }, {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
+          toast({ title: "Questions uploaded successfully" });
+        },
+        onError: (err: any) => {
+          setParseError(`Upload Failed: ${err.message}`);
+        }
+      });
+    } catch (err: any) {
+      setParseError(err.message);
+    }
+  };
+
+  const handleDeleteMcq = (mcqId: number) => {
+    deleteMcqMut.mutate({ id: mcqId }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
+        toast({ title: "Question deleted" });
+      }
+    });
+  };
+
+  const downloadTemplate = () => {
+    const template = [
+      {
+        questionNumber: 1,
+        questionText: "What is the powerhouse of the cell?",
+        optionA: "Nucleus",
+        optionB: "Mitochondria",
+        optionC: "Ribosome",
+        optionD: "Endoplasmic reticulum",
+        correctOption: "B"
+      }
+    ];
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template");
+    XLSX.writeFile(wb, "MCQ_Upload_Template.xlsx");
+  };
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto">
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" size="icon" asChild>
+          <Link href="/faculty/exams">
+            <ArrowLeft className="w-5 h-5 text-gray-500" />
+          </Link>
+        </Button>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">{exam.title}</h1>
+          <p className="text-sm text-gray-500">{exam.programName} - {exam.subjectName}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card className="col-span-1 border-gray-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">Exam Details</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+              <span className="text-gray-500 text-sm">Status</span>
+              <Badge variant={exam.isActive ? "default" : "secondary"}>{exam.isActive ? "Active" : "Draft"}</Badge>
+            </div>
+            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+              <span className="text-gray-500 text-sm">Duration</span>
+              <span className="font-medium">{exam.durationMinutes} mins</span>
+            </div>
+            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+              <span className="text-gray-500 text-sm">Total Required</span>
+              <span className="font-medium">{exam.totalQuestions} questions</span>
+            </div>
+            <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+              <span className="text-gray-500 text-sm">Current MCQs</span>
+              <span className={`font-medium ${mcqs.length === exam.totalQuestions ? 'text-green-600' : 'text-amber-600'}`}>
+                {mcqs.length} uploaded
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="col-span-1 md:col-span-2 border-gray-200 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-lg">Bulk Upload MCQs</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {parseError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{parseError}</AlertDescription>
+              </Alert>
+            )}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-6 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50/50">
+              <input 
+                type="file" 
+                accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
+                className="hidden" 
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+              />
+              <Button onClick={() => fileInputRef.current?.click()} disabled={bulkMut.isPending} className="w-full sm:w-auto">
+                <Upload className="w-4 h-4 mr-2" />
+                {bulkMut.isPending ? "Uploading..." : "Upload CSV / Excel"}
+              </Button>
+              <div className="text-sm text-gray-500 flex-1">
+                Upload a file with columns: <code className="bg-gray-100 px-1 py-0.5 rounded">questionNumber</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">questionText</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionA</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionB</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionC</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionD</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">correctOption</code>
+              </div>
+              <Button variant="outline" onClick={downloadTemplate} size="sm">
+                <FileSpreadsheet className="w-4 h-4 mr-2" /> Template
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden mt-6">
+        <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+          <h3 className="font-semibold text-gray-900">Question Bank</h3>
+          <span className="text-sm text-gray-500">{mcqs.length} questions</span>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[80px]">#</TableHead>
+              <TableHead>Question</TableHead>
+              <TableHead>Options</TableHead>
+              <TableHead className="w-[80px] text-center">Correct</TableHead>
+              <TableHead className="w-[80px]"></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {mcqs.length === 0 ? (
+              <TableRow><TableCell colSpan={5} className="text-center py-12 text-gray-500">No questions uploaded yet.</TableCell></TableRow>
+            ) : mcqs.map((q) => (
+              <TableRow key={q.id}>
+                <TableCell className="font-medium text-gray-500">{q.questionNumber}</TableCell>
+                <TableCell className="font-medium">{q.questionText}</TableCell>
+                <TableCell className="text-sm text-gray-600">
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <div><span className="font-medium">A:</span> {q.optionA}</div>
+                    <div><span className="font-medium">B:</span> {q.optionB}</div>
+                    <div><span className="font-medium">C:</span> {q.optionC}</div>
+                    <div><span className="font-medium">D:</span> {q.optionD}</div>
+                  </div>
+                </TableCell>
+                <TableCell className="text-center font-bold text-blue-600">{q.correctOption}</TableCell>
+                <TableCell>
+                  <Button variant="ghost" size="icon" onClick={() => handleDeleteMcq(q.id)}>
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
