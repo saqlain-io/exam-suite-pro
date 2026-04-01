@@ -8,6 +8,7 @@ export const subjectsTable = pgTable("subjects", {
   code: text("code").notNull(),
   programId: integer("program_id").notNull(),
   semesterId: integer("semester_id").notNull(),
+  facultyId: integer("faculty_id"),
 });
 
 export const insertSubjectSchema = createInsertSchema(subjectsTable).omit({ id: true });

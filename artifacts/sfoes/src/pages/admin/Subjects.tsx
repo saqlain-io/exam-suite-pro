@@ -12,7 +12,8 @@ import {
   useDeleteSubject, 
   Subject,
   useGetPrograms,
-  useGetSemesters
+  useGetSemesters,
+  useGetUsers
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,19 +23,24 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 
 const schema = z.object({
   name: z.string().min(1, "Name is required"),
   code: z.string().min(1, "Code is required"),
   programId: z.coerce.number().min(1, "Program is required"),
   semesterId: z.coerce.number().min(1, "Semester is required"),
+  facultyId: z.coerce.number().optional().nullable(),
 });
 
 export function AdminSubjects() {
   const { data: subjects, isLoading } = useGetSubjects();
   const { data: programs } = useGetPrograms();
   const { data: semesters } = useGetSemesters();
+  const { data: allUsers } = useGetUsers();
   
+  const facultyUsers = allUsers?.filter(u => u.role === "faculty") || [];
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   
@@ -47,12 +53,13 @@ export function AdminSubjects() {
 
   const form = useForm<z.infer<typeof schema>>({
     resolver: zodResolver(schema),
-    defaultValues: { name: "", code: "", programId: 0, semesterId: 0 }
+    defaultValues: { name: "", code: "", programId: 0, semesterId: 0, facultyId: null }
   });
 
   const onSubmit = (data: z.infer<typeof schema>) => {
+    const payload = { ...data, facultyId: data.facultyId || null };
     if (editingId) {
-      updateMut.mutate({ id: editingId, data }, {
+      updateMut.mutate({ id: editingId, data: payload }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetSubjectsQueryKey() });
           setIsDialogOpen(false);
@@ -60,7 +67,7 @@ export function AdminSubjects() {
         }
       });
     } else {
-      createMut.mutate({ data }, {
+      createMut.mutate({ data: payload }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetSubjectsQueryKey() });
           setIsDialogOpen(false);
@@ -70,15 +77,21 @@ export function AdminSubjects() {
     }
   };
 
-  const openEdit = (s: Subject) => {
+  const openEdit = (s: Subject & { facultyId?: number | null; facultyName?: string | null }) => {
     setEditingId(s.id);
-    form.reset({ name: s.name, code: s.code, programId: s.programId, semesterId: s.semesterId });
+    form.reset({
+      name: s.name,
+      code: s.code,
+      programId: s.programId,
+      semesterId: s.semesterId,
+      facultyId: s.facultyId ?? null,
+    });
     setIsDialogOpen(true);
   };
 
   const openCreate = () => {
     setEditingId(null);
-    form.reset({ name: "", code: "", programId: programs?.[0]?.id || 0, semesterId: semesters?.[0]?.id || 0 });
+    form.reset({ name: "", code: "", programId: programs?.[0]?.id || 0, semesterId: semesters?.[0]?.id || 0, facultyId: null });
     setIsDialogOpen(true);
   };
 
@@ -148,6 +161,27 @@ export function AdminSubjects() {
                   </FormItem>
                 )} />
 
+                <FormField control={form.control} name="facultyId" render={({field}) => (
+                  <FormItem>
+                    <FormLabel>Assign Teacher <span className="text-gray-400 font-normal">(Optional)</span></FormLabel>
+                    <Select
+                      onValueChange={(val) => field.onChange(val === "0" ? null : Number(val))}
+                      value={field.value ? field.value.toString() : "0"}
+                    >
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="No teacher assigned" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="0">— No teacher assigned —</SelectItem>
+                        {facultyUsers.map(f => (
+                          <SelectItem key={f.id} value={f.id.toString()}>{f.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
                 <Button type="submit" className="w-full" disabled={createMut.isPending || updateMut.isPending}>
                   Save
                 </Button>
@@ -165,18 +199,24 @@ export function AdminSubjects() {
               <TableHead>Name</TableHead>
               <TableHead>Program</TableHead>
               <TableHead>Semester</TableHead>
+              <TableHead>Assigned Teacher</TableHead>
               <TableHead className="w-[100px]"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-8">Loading...</TableCell></TableRow>
-            ) : subjects?.map((s) => (
+              <TableRow><TableCell colSpan={6} className="text-center py-8">Loading...</TableCell></TableRow>
+            ) : subjects?.map((s: Subject & { facultyId?: number | null; facultyName?: string | null }) => (
               <TableRow key={s.id}>
                 <TableCell className="font-medium">{s.code}</TableCell>
                 <TableCell>{s.name}</TableCell>
                 <TableCell>{s.programName}</TableCell>
                 <TableCell>{s.semesterLabel}</TableCell>
+                <TableCell>
+                  {s.facultyName
+                    ? <Badge variant="secondary" className="bg-blue-50 text-blue-700 border border-blue-200">{s.facultyName}</Badge>
+                    : <span className="text-gray-400 text-sm">Unassigned</span>}
+                </TableCell>
                 <TableCell>
                   <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={() => openEdit(s)}>

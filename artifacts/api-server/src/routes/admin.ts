@@ -1,8 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db, usersTable, yearsTable, programsTable, semestersTable, subjectsTable, examsTable, examAttemptsTable, mcqsTable } from "@workspace/db";
-import { eq, and, count, sql } from "drizzle-orm";
+import { eq, and, count, sql, aliasedTable } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/auth";
 import { hashPassword } from "../lib/auth";
+
+const facultyUsersAlias = aliasedTable(usersTable, "faculty_user");
 
 const router: IRouter = Router();
 
@@ -123,62 +125,64 @@ router.get("/admin/semesters", requireAuth, async (_req, res): Promise<void> => 
 });
 
 // Subjects
+const subjectSelectFields = {
+  id: subjectsTable.id,
+  name: subjectsTable.name,
+  code: subjectsTable.code,
+  programId: subjectsTable.programId,
+  semesterId: subjectsTable.semesterId,
+  facultyId: subjectsTable.facultyId,
+  programName: programsTable.name,
+  semesterLabel: semestersTable.label,
+  facultyName: facultyUsersAlias.name,
+};
+
 router.get("/admin/subjects", requireAuth, async (req, res): Promise<void> => {
-  const { programId, semesterId } = req.query;
-  let query = db
-    .select({
-      id: subjectsTable.id,
-      name: subjectsTable.name,
-      code: subjectsTable.code,
-      programId: subjectsTable.programId,
-      semesterId: subjectsTable.semesterId,
-      programName: programsTable.name,
-      semesterLabel: semestersTable.label,
-    })
-    .from(subjectsTable)
-    .leftJoin(programsTable, eq(subjectsTable.programId, programsTable.id))
-    .leftJoin(semestersTable, eq(subjectsTable.semesterId, semestersTable.id));
+  const { programId, semesterId, facultyId } = req.query;
 
   const conditions = [];
   if (programId) conditions.push(eq(subjectsTable.programId, Number(programId)));
   if (semesterId) conditions.push(eq(subjectsTable.semesterId, Number(semesterId)));
+  if (facultyId) conditions.push(eq(subjectsTable.facultyId, Number(facultyId)));
 
-  if (conditions.length > 0) {
-    const results = await db
-      .select({
-        id: subjectsTable.id,
-        name: subjectsTable.name,
-        code: subjectsTable.code,
-        programId: subjectsTable.programId,
-        semesterId: subjectsTable.semesterId,
-        programName: programsTable.name,
-        semesterLabel: semestersTable.label,
-      })
-      .from(subjectsTable)
-      .leftJoin(programsTable, eq(subjectsTable.programId, programsTable.id))
-      .leftJoin(semestersTable, eq(subjectsTable.semesterId, semestersTable.id))
-      .where(and(...conditions));
-    res.json(results);
-  } else {
-    const results = await query;
-    res.json(results);
-  }
+  const base = db
+    .select(subjectSelectFields)
+    .from(subjectsTable)
+    .leftJoin(programsTable, eq(subjectsTable.programId, programsTable.id))
+    .leftJoin(semestersTable, eq(subjectsTable.semesterId, semestersTable.id))
+    .leftJoin(facultyUsersAlias, eq(subjectsTable.facultyId, facultyUsersAlias.id));
+
+  const results = conditions.length > 0
+    ? await base.where(and(...conditions))
+    : await base;
+
+  res.json(results);
 });
 
 router.post("/admin/subjects", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
-  const { name, code, programId, semesterId } = req.body;
+  const { name, code, programId, semesterId, facultyId } = req.body;
   if (!name || !code || !programId || !semesterId) {
     res.status(400).json({ error: "name, code, programId, semesterId required" });
     return;
   }
-  const [subject] = await db.insert(subjectsTable).values({ name, code, programId: Number(programId), semesterId: Number(semesterId) }).returning();
+  const [subject] = await db.insert(subjectsTable).values({
+    name, code,
+    programId: Number(programId),
+    semesterId: Number(semesterId),
+    facultyId: facultyId ? Number(facultyId) : null,
+  }).returning();
   res.status(201).json(subject);
 });
 
 router.put("/admin/subjects/:id", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
-  const { name, code, programId, semesterId } = req.body;
-  const [subject] = await db.update(subjectsTable).set({ name, code, programId: Number(programId), semesterId: Number(semesterId) }).where(eq(subjectsTable.id, id)).returning();
+  const { name, code, programId, semesterId, facultyId } = req.body;
+  const [subject] = await db.update(subjectsTable).set({
+    name, code,
+    programId: Number(programId),
+    semesterId: Number(semesterId),
+    facultyId: facultyId ? Number(facultyId) : null,
+  }).where(eq(subjectsTable.id, id)).returning();
   if (!subject) { res.status(404).json({ error: "Not found" }); return; }
   res.json(subject);
 });
