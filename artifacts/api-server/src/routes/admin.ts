@@ -58,8 +58,8 @@ router.get("/admin/dashboard", requireAuth, requireRole("admin"), async (req, re
   });
 });
 
-// Years
-router.get("/admin/years", requireAuth, async (_req, res): Promise<void> => {
+// Years (public — needed for student login page)
+router.get("/admin/years", async (_req, res): Promise<void> => {
   const years = await db.select().from(yearsTable).orderBy(yearsTable.value);
   res.json(years);
 });

@@ -39,10 +39,11 @@ const schema = z.object({
 });
 
 export function FacultyExams() {
+  const { user } = useAuth();
   const { data: exams, isLoading } = useGetFacultyExams();
   const { data: programs } = useGetPrograms();
   const { data: semesters } = useGetSemesters();
-  const { data: subjects } = useGetSubjects();
+  const { data: allSubjects } = useGetSubjects();
   const { data: years } = useGetYears();
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -67,13 +68,20 @@ export function FacultyExams() {
     }
   });
 
-  // Filter subjects based on selected program and semester
-  const selectedProgramId = form.watch("programId");
-  const selectedSemesterId = form.watch("semesterId");
-  const filteredSubjects = subjects?.filter(s => 
-    (!selectedProgramId || s.programId === selectedProgramId) && 
+  // Only show subjects assigned to this faculty member (or all if none assigned to them)
+  const mySubjects = (() => {
+    if (!allSubjects) return [];
+    const assigned = allSubjects.filter((s: any) => s.facultyId === user?.id);
+    return assigned.length > 0 ? assigned : allSubjects;
+  })();
+
+  // Filter by selected program and semester — fix type mismatch with Number()
+  const selectedProgramId = Number(form.watch("programId"));
+  const selectedSemesterId = Number(form.watch("semesterId"));
+  const filteredSubjects = mySubjects.filter((s: any) =>
+    (!selectedProgramId || s.programId === selectedProgramId) &&
     (!selectedSemesterId || s.semesterId === selectedSemesterId)
-  ) || [];
+  );
 
   const onSubmit = (data: z.infer<typeof schema>) => {
     createMut.mutate({ data: { ...data, yearId: data.yearId || null } }, {
