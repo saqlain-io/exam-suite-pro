@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { useParams, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { Upload, ArrowLeft, Trash2, AlertCircle, FileSpreadsheet } from "lucide-react";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import Papa from "papaparse";
 import { 
   useGetExamById, 
@@ -52,19 +52,31 @@ export function FacultyExamDetail() {
         });
       } else if (file.name.match(/\.(xlsx|xls)$/)) {
         const reader = new FileReader();
-        reader.onload = (evt) => {
+        reader.onload = async (evt) => {
           try {
-            const bstr = evt.target?.result;
-            const wb = XLSX.read(bstr, { type: 'binary' });
-            const wsname = wb.SheetNames[0];
-            const ws = wb.Sheets[wsname];
-            const data = XLSX.utils.sheet_to_json(ws);
-            processParsedData(data);
+            const buffer = evt.target?.result as ArrayBuffer;
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(buffer);
+            const worksheet = workbook.worksheets[0];
+            const headers: string[] = [];
+            const rows: Record<string, any>[] = [];
+            worksheet.eachRow((row, rowNumber) => {
+              if (rowNumber === 1) {
+                row.eachCell((cell) => headers.push(String(cell.value ?? "")));
+              } else {
+                const obj: Record<string, any> = {};
+                row.eachCell((cell, colNumber) => {
+                  obj[headers[colNumber - 1]] = cell.value;
+                });
+                rows.push(obj);
+              }
+            });
+            processParsedData(rows);
           } catch (err: any) {
             setParseError(`Excel Parse Error: ${err.message}`);
           }
         };
-        reader.readAsBinaryString(file);
+        reader.readAsArrayBuffer(file);
       } else {
         setParseError("Invalid file type. Please upload CSV or Excel (.xlsx)");
       }
@@ -122,22 +134,37 @@ export function FacultyExamDetail() {
     });
   };
 
-  const downloadTemplate = () => {
-    const template = [
-      {
-        questionNumber: 1,
-        questionText: "What is the powerhouse of the cell?",
-        optionA: "Nucleus",
-        optionB: "Mitochondria",
-        optionC: "Ribosome",
-        optionD: "Endoplasmic reticulum",
-        correctOption: "B"
-      }
+  const downloadTemplate = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Template");
+    worksheet.columns = [
+      { header: "questionNumber", key: "questionNumber" },
+      { header: "questionText", key: "questionText" },
+      { header: "optionA", key: "optionA" },
+      { header: "optionB", key: "optionB" },
+      { header: "optionC", key: "optionC" },
+      { header: "optionD", key: "optionD" },
+      { header: "correctOption", key: "correctOption" },
     ];
-    const ws = XLSX.utils.json_to_sheet(template);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template");
-    XLSX.writeFile(wb, "MCQ_Upload_Template.xlsx");
+    worksheet.addRow({
+      questionNumber: 1,
+      questionText: "What is the powerhouse of the cell?",
+      optionA: "Nucleus",
+      optionB: "Mitochondria",
+      optionC: "Ribosome",
+      optionD: "Endoplasmic reticulum",
+      correctOption: "B",
+    });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "MCQ_Upload_Template.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (

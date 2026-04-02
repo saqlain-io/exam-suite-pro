@@ -4,33 +4,44 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Download, Search } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 export function AdminResults() {
   const [programId, setProgramId] = useState<number | undefined>();
   const { data: programs } = useGetPrograms();
   const { data: results, isLoading } = useGetAdminResults({ programId }, { query: { enabled: true } });
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!results || results.length === 0) return;
 
-    const wsData = results.map(r => ({
-      "Student Name": r.studentName,
-      "Roll Number": r.rollNumber,
-      "Program": r.programName,
-      "Subject": r.subjectName,
-      "Exam Title": r.examTitle,
-      "Score": r.score,
-      "Total Questions": r.totalQuestions,
-      "Percentage (%)": r.percentage,
-      "Date Submitted": new Date(r.submittedAt).toLocaleString(),
-      "Reason": r.submissionReason
-    }));
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Exam Results");
+    worksheet.columns = [
+      { header: "Student Name", key: "studentName" },
+      { header: "Roll Number", key: "rollNumber" },
+      { header: "Program", key: "programName" },
+      { header: "Subject", key: "subjectName" },
+      { header: "Exam Title", key: "examTitle" },
+      { header: "Score", key: "score" },
+      { header: "Total Questions", key: "totalQuestions" },
+      { header: "Percentage (%)", key: "percentage" },
+      { header: "Date Submitted", key: "submittedAt" },
+      { header: "Reason", key: "submissionReason" },
+    ];
+    results.forEach(r => {
+      worksheet.addRow({ ...r, submittedAt: new Date(r.submittedAt).toLocaleString() });
+    });
 
-    const ws = XLSX.utils.json_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Exam Results");
-    XLSX.writeFile(wb, "SFOES_Exam_Results.xlsx");
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "SFOES_Exam_Results.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   return (
