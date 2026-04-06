@@ -57355,6 +57355,10 @@ seedIfEmpty().then(() => {
     logger.info({ port }, "Server listening");
   });
 });
+var src_default = app_default;
+export {
+  src_default as default
+};
 /*! Bundled license information:
 
 depd/index.js:
