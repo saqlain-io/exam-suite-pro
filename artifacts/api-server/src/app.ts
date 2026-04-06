@@ -25,10 +25,7 @@ app.use(
     },
   }),
 );
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-app.use("/api", router);
-
-export default app;
+app.use(cors({
+  origin: ['https://exam-suite-pro-sfoes.vercel.app', 'http://localhost:5173'],
+  credentials: true,
+}));
