@@ -57198,6 +57198,16 @@ router6.post("/exams/:id/submit", requireAuth, requireRole("student"), async (re
     submittedAt: /* @__PURE__ */ new Date()
   });
 });
+router6.post("/exams/:id/publish", requireAuth, requireRole("faculty"), async (req, res) => {
+  const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
+  if (!exam) {
+    res.status(404).json({ error: "Exam not found" });
+    return;
+  }
+  await db.update(examsTable).set({ isActive: true }).where(eq(examsTable.id, examId));
+  res.json({ success: true, message: "Exam published" });
+});
 var exams_default = router6;
 
 // src/routes/results.ts

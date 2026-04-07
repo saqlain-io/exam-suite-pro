@@ -215,5 +215,13 @@ router.post("/exams/:id/submit", requireAuth, requireRole("student"), async (req
     submittedAt: new Date(),
   });
 });
+// Publish exam
+router.post("/exams/:id/publish", requireAuth, requireRole("faculty"), async (req, res): Promise<void> => {
+  const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
+  if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }
+  await db.update(examsTable).set({ isActive: true }).where(eq(examsTable.id, examId));
+  res.json({ success: true, message: "Exam published" });
+});
 
 export default router;
