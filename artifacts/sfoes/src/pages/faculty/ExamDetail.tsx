@@ -22,13 +22,13 @@ export function FacultyExamDetail() {
   const { id } = useParams();
   const examId = parseInt(id || "0");
   
-  const { data, isLoading } = useGetExamById(examId, { query: { enabled: !!examId } });
+  const { data, isLoading } = useGetExamById(examId, { query: { enabled: !!examId, queryKey: getGetExamByIdQueryKey(examId) } });
   const bulkMut = useBulkUploadMcqs();
   const deleteMcqMut = useDeleteMcq();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
   const [parseError, setParseError] = useState<string | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (isLoading) return <div className="p-8 text-center">Loading...</div>;
@@ -36,12 +36,27 @@ export function FacultyExamDetail() {
 
   const { exam, mcqs } = data;
 
+  const handlePublish = async () => {
+    setIsPublishing(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`https://examapi-chi.vercel.app/api/exams/${examId}/publish`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Failed to publish");
+      queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
+      toast({ title: "Exam published successfully!" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+    setIsPublishing(false);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
     setParseError(null);
-    
     try {
       if (file.name.endsWith('.csv')) {
         Papa.parse(file, {
@@ -83,8 +98,6 @@ export function FacultyExamDetail() {
     } catch (err: any) {
       setParseError(err.message);
     }
-    
-    // reset input
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -92,14 +105,12 @@ export function FacultyExamDetail() {
     try {
       const parsedMcqs = data.map((row: any, i: number) => {
         if (!row.questionText || !row.optionA || !row.optionB || !row.optionC || !row.optionD || !row.correctOption) {
-          throw new Error(`Row ${i + 1} is missing required fields. Ensure questionText, optionA-D, and correctOption exist.`);
+          throw new Error(`Row ${i + 1} is missing required fields.`);
         }
-        
         const correct = String(row.correctOption).toUpperCase().trim();
         if (!["A", "B", "C", "D"].includes(correct)) {
           throw new Error(`Row ${i + 1}: correctOption must be A, B, C, or D`);
         }
-
         return {
           questionNumber: parseInt(row.questionNumber) || i + 1,
           questionText: String(row.questionText),
@@ -110,7 +121,6 @@ export function FacultyExamDetail() {
           correctOption: correct as McqInputCorrectOption
         };
       });
-
       bulkMut.mutate({ id: examId, data: { mcqs: parsedMcqs } }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
@@ -201,10 +211,19 @@ export function FacultyExamDetail() {
             </div>
             <div className="flex justify-between items-center pb-2 border-b border-gray-100">
               <span className="text-gray-500 text-sm">Current MCQs</span>
-              <span className={`font-medium ${mcqs.length === exam.totalQuestions ? 'text-green-600' : 'text-amber-600'}`}>
+              <span className={`font-medium ${mcqs.length >= exam.totalQuestions ? 'text-green-600' : 'text-amber-600'}`}>
                 {mcqs.length} uploaded
               </span>
             </div>
+            {!exam.isActive && mcqs.length >= exam.totalQuestions && (
+              <Button
+                className="w-full mt-2"
+                onClick={handlePublish}
+                disabled={isPublishing}
+              >
+                {isPublishing ? "Publishing..." : "🚀 Publish Exam"}
+              </Button>
+            )}
           </CardContent>
         </Card>
 
@@ -221,10 +240,10 @@ export function FacultyExamDetail() {
               </Alert>
             )}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-6 border-2 border-dashed border-gray-200 rounded-lg bg-gray-50/50">
-              <input 
-                type="file" 
-                accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" 
-                className="hidden" 
+              <input
+                type="file"
+                accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+                className="hidden"
                 ref={fileInputRef}
                 onChange={handleFileUpload}
               />
@@ -233,7 +252,7 @@ export function FacultyExamDetail() {
                 {bulkMut.isPending ? "Uploading..." : "Upload CSV / Excel"}
               </Button>
               <div className="text-sm text-gray-500 flex-1">
-                Upload a file with columns: <code className="bg-gray-100 px-1 py-0.5 rounded">questionNumber</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">questionText</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionA</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionB</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionC</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionD</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">correctOption</code>
+                Upload a file with columns: <code className="bg-gray-100 px-1 py-0.5 rounded">questionNumber</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">questionText</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionA-D</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">correctOption</code>
               </div>
               <Button variant="outline" onClick={downloadTemplate} size="sm">
                 <FileSpreadsheet className="w-4 h-4 mr-2" /> Template
