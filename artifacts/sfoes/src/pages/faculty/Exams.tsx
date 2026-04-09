@@ -84,12 +84,18 @@ export function FacultyExams() {
   );
 
   const onSubmit = (data: z.infer<typeof schema>) => {
-    createMut.mutate({ data: { 
-      ...data, 
+    createMut.mutate({ data: {
+      title: data.title,
+      programId: data.programId,
+      subjectId: data.subjectId,
+      semesterId: data.semesterId,
       yearId: data.yearId || null,
+      durationMinutes: data.durationMinutes,
+      totalQuestions: data.totalQuestions,
+      isActive: data.isActive,
       startTime: data.startTime || null,
       endTime: data.endTime || null,
-    }}, {
+    } as any }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetFacultyExamsQueryKey() });
         setIsDialogOpen(false);
@@ -191,11 +197,7 @@ export function FacultyExams() {
                     <FormItem>
                       <FormLabel>Start Time (Optional)</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="datetime-local" 
-                          {...field} 
-                          value={field.value || ""}
-                        />
+                        <Input type="datetime-local" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -204,11 +206,7 @@ export function FacultyExams() {
                     <FormItem>
                       <FormLabel>End Time (Optional)</FormLabel>
                       <FormControl>
-                        <Input 
-                          type="datetime-local" 
-                          {...field}
-                          value={field.value || ""}
-                        />
+                        <Input type="datetime-local" {...field} value={field.value || ""} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
