@@ -26,6 +26,8 @@ router.get("/faculty/dashboard", requireAuth, requireRole("admin", "faculty"), a
       durationMinutes: examsTable.durationMinutes,
       totalQuestions: examsTable.totalQuestions,
       isActive: examsTable.isActive,
+      startTime: examsTable.startTime,
+      endTime: examsTable.endTime,
       createdAt: examsTable.createdAt,
     })
     .from(examsTable)
@@ -34,7 +36,6 @@ router.get("/faculty/dashboard", requireAuth, requireRole("admin", "faculty"), a
     .orderBy(sql`${examsTable.createdAt} DESC`)
     .limit(5);
 
-  // Get MCQ counts per exam
   const mcqCounts = await db
     .select({ examId: mcqsTable.examId, cnt: count() })
     .from(mcqsTable)
@@ -66,6 +67,8 @@ router.get("/faculty/exams", requireAuth, requireRole("admin", "faculty"), async
       durationMinutes: examsTable.durationMinutes,
       totalQuestions: examsTable.totalQuestions,
       isActive: examsTable.isActive,
+      startTime: examsTable.startTime,
+      endTime: examsTable.endTime,
       createdAt: examsTable.createdAt,
     })
     .from(examsTable)
@@ -86,7 +89,7 @@ router.get("/faculty/exams", requireAuth, requireRole("admin", "faculty"), async
 
 // Create exam
 router.post("/faculty/exams", requireAuth, requireRole("admin", "faculty"), async (req, res): Promise<void> => {
-  const { title, subjectId, programId, semesterId, yearId, durationMinutes, totalQuestions, isActive } = req.body;
+  const { title, subjectId, programId, semesterId, yearId, durationMinutes, totalQuestions, isActive, startTime, endTime } = req.body;
   if (!title || !subjectId || !programId || !semesterId) {
     res.status(400).json({ error: "title, subjectId, programId, semesterId required" });
     return;
@@ -99,7 +102,9 @@ router.post("/faculty/exams", requireAuth, requireRole("admin", "faculty"), asyn
     yearId: yearId ? Number(yearId) : null,
     durationMinutes: Number(durationMinutes || 30),
     totalQuestions: Number(totalQuestions || 100),
-    isActive: isActive !== undefined ? Boolean(isActive) : true,
+    isActive: isActive !== undefined ? Boolean(isActive) : false,
+    startTime: startTime ? new Date(startTime) : null,
+    endTime: endTime ? new Date(endTime) : null,
   }).returning();
   res.status(201).json({ ...exam, mcqCount: 0 });
 });
@@ -120,6 +125,8 @@ router.get("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"), a
       durationMinutes: examsTable.durationMinutes,
       totalQuestions: examsTable.totalQuestions,
       isActive: examsTable.isActive,
+      startTime: examsTable.startTime,
+      endTime: examsTable.endTime,
       createdAt: examsTable.createdAt,
     })
     .from(examsTable)
@@ -142,6 +149,15 @@ router.delete("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty")
   res.json({ success: true, message: "Deleted" });
 });
 
+// Publish exam
+router.post("/exams/:id/publish", requireAuth, requireRole("faculty", "admin"), async (req, res): Promise<void> => {
+  const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
+  if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }
+  await db.update(examsTable).set({ isActive: true }).where(eq(examsTable.id, examId));
+  res.json({ success: true, message: "Exam published" });
+});
+
 // Bulk upload MCQs
 router.post("/faculty/exams/:id/mcqs/bulk", requireAuth, requireRole("admin", "faculty"), async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
@@ -150,11 +166,7 @@ router.post("/faculty/exams/:id/mcqs/bulk", requireAuth, requireRole("admin", "f
     res.status(400).json({ error: "mcqs array required" });
     return;
   }
-
-  // Delete existing MCQs for this exam
   await db.delete(mcqsTable).where(eq(mcqsTable.examId, id));
-
-  // Insert new MCQs
   const toInsert = mcqs.map((m: Record<string, unknown>) => ({
     examId: id,
     questionText: String(m.questionText),
@@ -165,7 +177,6 @@ router.post("/faculty/exams/:id/mcqs/bulk", requireAuth, requireRole("admin", "f
     correctOption: String(m.correctOption).toUpperCase(),
     questionNumber: Number(m.questionNumber),
   }));
-
   await db.insert(mcqsTable).values(toInsert);
   res.json({ success: true, message: `${toInsert.length} MCQs uploaded` });
 });

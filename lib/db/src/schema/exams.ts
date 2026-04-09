@@ -12,6 +12,8 @@ export const examsTable = pgTable("exams", {
   durationMinutes: integer("duration_minutes").notNull().default(30),
   totalQuestions: integer("total_questions").notNull().default(100),
   isActive: boolean("is_active").notNull().default(true),
+  startTime: timestamp("start_time", { withTimezone: true }),
+  endTime: timestamp("end_time", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

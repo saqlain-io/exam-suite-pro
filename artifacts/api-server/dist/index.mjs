@@ -56367,6 +56367,8 @@ var examsTable = pgTable("exams", {
   durationMinutes: integer("duration_minutes").notNull().default(30),
   totalQuestions: integer("total_questions").notNull().default(100),
   isActive: boolean("is_active").notNull().default(true),
+  startTime: timestamp("start_time", { withTimezone: true }),
+  endTime: timestamp("end_time", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
 var insertExamSchema = createInsertSchema(examsTable).omit({ id: true, createdAt: true });
@@ -56830,6 +56832,8 @@ router4.get("/faculty/dashboard", requireAuth, requireRole("admin", "faculty"), 
     durationMinutes: examsTable.durationMinutes,
     totalQuestions: examsTable.totalQuestions,
     isActive: examsTable.isActive,
+    startTime: examsTable.startTime,
+    endTime: examsTable.endTime,
     createdAt: examsTable.createdAt
   }).from(examsTable).leftJoin(subjectsTable, eq(examsTable.subjectId, subjectsTable.id)).leftJoin(programsTable, eq(examsTable.programId, programsTable.id)).orderBy(sql`${examsTable.createdAt} DESC`).limit(5);
   const mcqCounts = await db.select({ examId: mcqsTable.examId, cnt: count() }).from(mcqsTable).groupBy(mcqsTable.examId);
@@ -56855,6 +56859,8 @@ router4.get("/faculty/exams", requireAuth, requireRole("admin", "faculty"), asyn
     durationMinutes: examsTable.durationMinutes,
     totalQuestions: examsTable.totalQuestions,
     isActive: examsTable.isActive,
+    startTime: examsTable.startTime,
+    endTime: examsTable.endTime,
     createdAt: examsTable.createdAt
   }).from(examsTable).leftJoin(subjectsTable, eq(examsTable.subjectId, subjectsTable.id)).leftJoin(programsTable, eq(examsTable.programId, programsTable.id)).orderBy(sql`${examsTable.createdAt} DESC`);
   const mcqCounts = await db.select({ examId: mcqsTable.examId, cnt: count() }).from(mcqsTable).groupBy(mcqsTable.examId);
@@ -56863,7 +56869,7 @@ router4.get("/faculty/exams", requireAuth, requireRole("admin", "faculty"), asyn
   res.json(exams.map((e) => ({ ...e, mcqCount: mcqMap[e.id] ?? 0 })));
 });
 router4.post("/faculty/exams", requireAuth, requireRole("admin", "faculty"), async (req, res) => {
-  const { title, subjectId, programId, semesterId, yearId, durationMinutes, totalQuestions, isActive } = req.body;
+  const { title, subjectId, programId, semesterId, yearId, durationMinutes, totalQuestions, isActive, startTime, endTime } = req.body;
   if (!title || !subjectId || !programId || !semesterId) {
     res.status(400).json({ error: "title, subjectId, programId, semesterId required" });
     return;
@@ -56876,7 +56882,9 @@ router4.post("/faculty/exams", requireAuth, requireRole("admin", "faculty"), asy
     yearId: yearId ? Number(yearId) : null,
     durationMinutes: Number(durationMinutes || 30),
     totalQuestions: Number(totalQuestions || 100),
-    isActive: isActive !== void 0 ? Boolean(isActive) : true
+    isActive: isActive !== void 0 ? Boolean(isActive) : false,
+    startTime: startTime ? new Date(startTime) : null,
+    endTime: endTime ? new Date(endTime) : null
   }).returning();
   res.status(201).json({ ...exam, mcqCount: 0 });
 });
@@ -56894,6 +56902,8 @@ router4.get("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"), 
     durationMinutes: examsTable.durationMinutes,
     totalQuestions: examsTable.totalQuestions,
     isActive: examsTable.isActive,
+    startTime: examsTable.startTime,
+    endTime: examsTable.endTime,
     createdAt: examsTable.createdAt
   }).from(examsTable).leftJoin(subjectsTable, eq(examsTable.subjectId, subjectsTable.id)).leftJoin(programsTable, eq(examsTable.programId, programsTable.id)).where(eq(examsTable.id, id));
   if (!exam) {
@@ -56908,6 +56918,16 @@ router4.delete("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"
   await db.delete(mcqsTable).where(eq(mcqsTable.examId, id));
   await db.delete(examsTable).where(eq(examsTable.id, id));
   res.json({ success: true, message: "Deleted" });
+});
+router4.post("/exams/:id/publish", requireAuth, requireRole("faculty", "admin"), async (req, res) => {
+  const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
+  if (!exam) {
+    res.status(404).json({ error: "Exam not found" });
+    return;
+  }
+  await db.update(examsTable).set({ isActive: true }).where(eq(examsTable.id, examId));
+  res.json({ success: true, message: "Exam published" });
 });
 router4.post("/faculty/exams/:id/mcqs/bulk", requireAuth, requireRole("admin", "faculty"), async (req, res) => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
