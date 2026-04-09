@@ -35,7 +35,9 @@ const schema = z.object({
   yearId: z.coerce.number().optional().nullable(),
   durationMinutes: z.coerce.number().min(1, "Duration must be > 0"),
   totalQuestions: z.coerce.number().min(1, "Must have > 0 questions"),
-  isActive: z.boolean()
+  isActive: z.boolean(),
+  startTime: z.string().optional().nullable(),
+  endTime: z.string().optional().nullable(),
 });
 
 export function FacultyExams() {
@@ -47,10 +49,8 @@ export function FacultyExams() {
   const { data: years } = useGetYears();
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  
   const createMut = useCreateExam();
   const deleteMut = useDeleteExam();
 
@@ -63,19 +63,19 @@ export function FacultyExams() {
       semesterId: 0, 
       yearId: null,
       durationMinutes: 60,
-      totalQuestions: 100,
-      isActive: false
+      totalQuestions: 50,
+      isActive: false,
+      startTime: null,
+      endTime: null,
     }
   });
 
-  // Only show subjects assigned to this faculty member (or all if none assigned to them)
   const mySubjects = (() => {
     if (!allSubjects) return [];
     const assigned = allSubjects.filter((s: any) => s.facultyId === user?.id);
     return assigned.length > 0 ? assigned : allSubjects;
   })();
 
-  // Filter by selected program and semester — fix type mismatch with Number()
   const selectedProgramId = Number(form.watch("programId"));
   const selectedSemesterId = Number(form.watch("semesterId"));
   const filteredSubjects = mySubjects.filter((s: any) =>
@@ -84,7 +84,12 @@ export function FacultyExams() {
   );
 
   const onSubmit = (data: z.infer<typeof schema>) => {
-    createMut.mutate({ data: { ...data, yearId: data.yearId || null } }, {
+    createMut.mutate({ data: { 
+      ...data, 
+      yearId: data.yearId || null,
+      startTime: data.startTime || null,
+      endTime: data.endTime || null,
+    }}, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetFacultyExamsQueryKey() });
         setIsDialogOpen(false);
@@ -109,9 +114,7 @@ export function FacultyExams() {
         <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Manage Exams</h1>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button data-testid="button-create-exam">
-              <Plus className="w-4 h-4 mr-2" /> Create Exam
-            </Button>
+            <Button><Plus className="w-4 h-4 mr-2" /> Create Exam</Button>
           </DialogTrigger>
           <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
             <DialogHeader>
@@ -183,13 +186,40 @@ export function FacultyExams() {
                   )} />
                 </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="startTime" render={({field}) => (
+                    <FormItem>
+                      <FormLabel>Start Time (Optional)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="datetime-local" 
+                          {...field} 
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="endTime" render={({field}) => (
+                    <FormItem>
+                      <FormLabel>End Time (Optional)</FormLabel>
+                      <FormControl>
+                        <Input 
+                          type="datetime-local" 
+                          {...field}
+                          value={field.value || ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+
                 <FormField control={form.control} name="isActive" render={({field}) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 mt-4">
                     <div className="space-y-0.5">
                       <FormLabel className="text-base">Active Status</FormLabel>
-                      <div className="text-sm text-gray-500">
-                        Students can only see and start active exams.
-                      </div>
+                      <div className="text-sm text-gray-500">Students can only see and start active exams.</div>
                     </div>
                     <FormControl>
                       <Switch checked={field.value} onCheckedChange={field.onChange} />
@@ -198,9 +228,7 @@ export function FacultyExams() {
                 )} />
 
                 <div className="pt-4 flex justify-end">
-                  <Button type="submit" disabled={createMut.isPending}>
-                    Create Exam
-                  </Button>
+                  <Button type="submit" disabled={createMut.isPending}>Create Exam</Button>
                 </div>
               </form>
             </Form>
@@ -216,14 +244,15 @@ export function FacultyExams() {
               <TableHead>Program/Subject</TableHead>
               <TableHead>Duration</TableHead>
               <TableHead>Questions</TableHead>
+              <TableHead>Schedule</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-center py-12 text-gray-500">Loading exams...</TableCell></TableRow>
-            ) : exams?.map((e) => (
+              <TableRow><TableCell colSpan={7} className="text-center py-12 text-gray-500">Loading exams...</TableCell></TableRow>
+            ) : exams?.map((e: any) => (
               <TableRow key={e.id}>
                 <TableCell className="font-medium text-gray-900">{e.title}</TableCell>
                 <TableCell>
@@ -235,6 +264,14 @@ export function FacultyExams() {
                   <span className={e.mcqCount === e.totalQuestions ? "text-green-600" : "text-amber-600"}>
                     {e.mcqCount || 0}
                   </span> / {e.totalQuestions}
+                </TableCell>
+                <TableCell className="text-xs text-gray-500">
+                  {e.startTime ? (
+                    <div>
+                      <div>Start: {new Date(e.startTime).toLocaleString()}</div>
+                      <div>End: {e.endTime ? new Date(e.endTime).toLocaleString() : "—"}</div>
+                    </div>
+                  ) : "No schedule"}
                 </TableCell>
                 <TableCell>
                   <Badge variant={e.isActive ? "default" : "secondary"} className={e.isActive ? "bg-green-600 hover:bg-green-700" : ""}>
@@ -257,7 +294,7 @@ export function FacultyExams() {
                       <AlertDialogContent>
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete exam?</AlertDialogTitle>
-                          <AlertDialogDescription>This action will permanently delete this exam and all its MCQs.</AlertDialogDescription>
+                          <AlertDialogDescription>This will permanently delete this exam and all its MCQs.</AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
                           <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -270,7 +307,7 @@ export function FacultyExams() {
               </TableRow>
             ))}
             {exams?.length === 0 && (
-              <TableRow><TableCell colSpan={6} className="text-center py-12 text-gray-500">No exams found. Create one to get started.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-center py-12 text-gray-500">No exams found.</TableCell></TableRow>
             )}
           </TableBody>
         </Table>
