@@ -14,7 +14,7 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
-// Start exam - shuffle questions and options
+// Start exam
 router.post("/exams/:id/start", requireAuth, requireRole("student"), async (req, res): Promise<void> => {
   const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const studentId = req.currentUser!.id;
@@ -22,6 +22,30 @@ router.post("/exams/:id/start", requireAuth, requireRole("student"), async (req,
   const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
   if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }
   if (!exam.isActive) { res.status(403).json({ error: "Exam is not active" }); return; }
+
+  // Check start time
+  if (exam.startTime && new Date() < new Date(exam.startTime)) {
+    res.status(403).json({ error: "Exam has not started yet" }); return;
+  }
+
+  // Check end time
+  if (exam.endTime && new Date() > new Date(exam.endTime)) {
+    res.status(403).json({ error: "Exam time has ended" }); return;
+  }
+
+  // Block re-attempt if already completed
+  const [completedAttempt] = await db
+    .select()
+    .from(examAttemptsTable)
+    .where(and(
+      eq(examAttemptsTable.studentId, studentId),
+      eq(examAttemptsTable.examId, examId),
+      eq(examAttemptsTable.isCompleted, true),
+    ));
+
+  if (completedAttempt) {
+    res.status(403).json({ error: "You have already submitted this exam" }); return;
+  }
 
   // Check if already started (incomplete attempt)
   const [existingAttempt] = await db
@@ -34,7 +58,6 @@ router.post("/exams/:id/start", requireAuth, requireRole("student"), async (req,
     ));
 
   if (existingAttempt) {
-    // Resume existing attempt
     const mcqs = await db.select().from(mcqsTable).where(eq(mcqsTable.examId, examId));
     const questionOrder: number[] = JSON.parse(existingAttempt.questionOrder);
     const shuffleMap: Record<string, { label: string; text: string }[]> = JSON.parse(existingAttempt.shuffleMap);
@@ -69,7 +92,7 @@ router.post("/exams/:id/start", requireAuth, requireRole("student"), async (req,
     return;
   }
 
-  // New attempt: shuffle questions and options
+  // New attempt
   const mcqs = await db.select().from(mcqsTable).where(eq(mcqsTable.examId, examId));
   if (mcqs.length === 0) {
     res.status(400).json({ error: "No questions uploaded for this exam" });
@@ -146,7 +169,6 @@ router.post("/exams/:id/submit", requireAuth, requireRole("student"), async (req
   const [attempt] = await db.select().from(examAttemptsTable).where(eq(examAttemptsTable.id, Number(attemptId)));
   if (!attempt) { res.status(404).json({ error: "Attempt not found" }); return; }
   if (attempt.isCompleted) {
-    // Return existing result
     const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
     res.json({
       id: attempt.id,
@@ -161,19 +183,14 @@ router.post("/exams/:id/submit", requireAuth, requireRole("student"), async (req
     return;
   }
 
-  // Merge saved + submitted answers
   const savedAnswers = JSON.parse(attempt.answers);
   const finalAnswers = { ...savedAnswers, ...answers };
-
-  // Get shuffle map to find correct option in shuffled context
   const shuffleMap: Record<string, { label: string; text: string }[]> = JSON.parse(attempt.shuffleMap);
 
-  // Fetch correct answers
   const mcqs = await db.select().from(mcqsTable).where(eq(mcqsTable.examId, examId));
   const mcqMap: Record<number, typeof mcqs[0]> = {};
   for (const m of mcqs) mcqMap[m.id] = m;
 
-  // Score: for each question, map selected shuffled label back to original option text
   let score = 0;
   for (const [qIdStr, selectedLabel] of Object.entries(finalAnswers)) {
     const mcq = mcqMap[Number(qIdStr)];
@@ -181,7 +198,6 @@ router.post("/exams/:id/submit", requireAuth, requireRole("student"), async (req
     const shuffledOptions = shuffleMap[qIdStr];
     if (!shuffledOptions) continue;
 
-    // Find which original option text the selected label maps to
     const selectedEntry = shuffledOptions.find(o => o.label === selectedLabel);
     if (!selectedEntry) continue;
 
@@ -215,8 +231,9 @@ router.post("/exams/:id/submit", requireAuth, requireRole("student"), async (req
     submittedAt: new Date(),
   });
 });
+
 // Publish exam
-router.post("/exams/:id/publish", requireAuth, requireRole("faculty"), async (req, res): Promise<void> => {
+router.post("/exams/:id/publish", requireAuth, requireRole("faculty", "admin"), async (req, res): Promise<void> => {
   const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
   if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }

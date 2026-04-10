@@ -57062,6 +57062,23 @@ router6.post("/exams/:id/start", requireAuth, requireRole("student"), async (req
     res.status(403).json({ error: "Exam is not active" });
     return;
   }
+  if (exam.startTime && /* @__PURE__ */ new Date() < new Date(exam.startTime)) {
+    res.status(403).json({ error: "Exam has not started yet" });
+    return;
+  }
+  if (exam.endTime && /* @__PURE__ */ new Date() > new Date(exam.endTime)) {
+    res.status(403).json({ error: "Exam time has ended" });
+    return;
+  }
+  const [completedAttempt] = await db.select().from(examAttemptsTable).where(and(
+    eq(examAttemptsTable.studentId, studentId),
+    eq(examAttemptsTable.examId, examId),
+    eq(examAttemptsTable.isCompleted, true)
+  ));
+  if (completedAttempt) {
+    res.status(403).json({ error: "You have already submitted this exam" });
+    return;
+  }
   const [existingAttempt] = await db.select().from(examAttemptsTable).where(and(
     eq(examAttemptsTable.studentId, studentId),
     eq(examAttemptsTable.examId, examId),
@@ -57218,7 +57235,7 @@ router6.post("/exams/:id/submit", requireAuth, requireRole("student"), async (re
     submittedAt: /* @__PURE__ */ new Date()
   });
 });
-router6.post("/exams/:id/publish", requireAuth, requireRole("faculty"), async (req, res) => {
+router6.post("/exams/:id/publish", requireAuth, requireRole("faculty", "admin"), async (req, res) => {
   const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
   if (!exam) {
