@@ -57015,6 +57015,8 @@ router5.get("/student/available-exams", requireAuth, requireRole("student"), asy
       durationMinutes: examsTable.durationMinutes,
       totalQuestions: examsTable.totalQuestions,
       isActive: examsTable.isActive,
+      startTime: examsTable.startTime,
+      endTime: examsTable.endTime,
       createdAt: examsTable.createdAt
     }).from(examsTable).leftJoin(subjectsTable, eq(examsTable.subjectId, subjectsTable.id)).where(and(
       eq(examsTable.isActive, true),
@@ -57032,10 +57034,22 @@ router5.get("/student/available-exams", requireAuth, requireRole("student"), asy
       durationMinutes: examsTable.durationMinutes,
       totalQuestions: examsTable.totalQuestions,
       isActive: examsTable.isActive,
+      startTime: examsTable.startTime,
+      endTime: examsTable.endTime,
       createdAt: examsTable.createdAt
     }).from(examsTable).leftJoin(subjectsTable, eq(examsTable.subjectId, subjectsTable.id)).where(eq(examsTable.isActive, true));
   }
-  res.json(exams.map((e) => ({ ...e, programName: null, mcqCount: null })));
+  const attempts = await db.select().from(examAttemptsTable).where(and(
+    eq(examAttemptsTable.studentId, studentId),
+    eq(examAttemptsTable.isCompleted, true)
+  ));
+  const submittedExamIds = new Set(attempts.map((a) => a.examId));
+  res.json(exams.map((e) => ({
+    ...e,
+    programName: null,
+    mcqCount: null,
+    isSubmitted: submittedExamIds.has(e.id)
+  })));
 });
 var student_default = router5;
 

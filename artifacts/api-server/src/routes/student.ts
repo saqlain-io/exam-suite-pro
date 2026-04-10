@@ -30,7 +30,7 @@ router.get("/student/list", async (req, res): Promise<void> => {
   res.json(students);
 });
 
-// Get available exams for student
+// Get available exams for student with submission status
 router.get("/student/available-exams", requireAuth, requireRole("student"), async (req, res): Promise<void> => {
   const studentId = req.currentUser!.id;
   const [student] = await db.select().from(usersTable).where(eq(usersTable.id, studentId));
@@ -50,6 +50,8 @@ router.get("/student/available-exams", requireAuth, requireRole("student"), asyn
         durationMinutes: examsTable.durationMinutes,
         totalQuestions: examsTable.totalQuestions,
         isActive: examsTable.isActive,
+        startTime: examsTable.startTime,
+        endTime: examsTable.endTime,
         createdAt: examsTable.createdAt,
       })
       .from(examsTable)
@@ -71,6 +73,8 @@ router.get("/student/available-exams", requireAuth, requireRole("student"), asyn
         durationMinutes: examsTable.durationMinutes,
         totalQuestions: examsTable.totalQuestions,
         isActive: examsTable.isActive,
+        startTime: examsTable.startTime,
+        endTime: examsTable.endTime,
         createdAt: examsTable.createdAt,
       })
       .from(examsTable)
@@ -78,7 +82,23 @@ router.get("/student/available-exams", requireAuth, requireRole("student"), asyn
       .where(eq(examsTable.isActive, true));
   }
 
-  res.json(exams.map(e => ({ ...e, programName: null, mcqCount: null })));
+  // Check submission status for each exam
+  const attempts = await db
+    .select()
+    .from(examAttemptsTable)
+    .where(and(
+      eq(examAttemptsTable.studentId, studentId),
+      eq(examAttemptsTable.isCompleted, true),
+    ));
+
+  const submittedExamIds = new Set(attempts.map(a => a.examId));
+
+  res.json(exams.map(e => ({
+    ...e,
+    programName: null,
+    mcqCount: null,
+    isSubmitted: submittedExamIds.has(e.id),
+  })));
 });
 
 export default router;
