@@ -23,17 +23,14 @@ router.post("/exams/:id/start", requireAuth, requireRole("student"), async (req,
   if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }
   if (!exam.isActive) { res.status(403).json({ error: "Exam is not active" }); return; }
 
-  // Check start time
   if (exam.startTime && new Date() < new Date(exam.startTime)) {
     res.status(403).json({ error: "Exam has not started yet" }); return;
   }
 
-  // Check end time
   if (exam.endTime && new Date() > new Date(exam.endTime)) {
     res.status(403).json({ error: "Exam time has ended" }); return;
   }
 
-  // Block re-attempt if already completed
   const [completedAttempt] = await db
     .select()
     .from(examAttemptsTable)
@@ -47,7 +44,6 @@ router.post("/exams/:id/start", requireAuth, requireRole("student"), async (req,
     res.status(403).json({ error: "You have already submitted this exam" }); return;
   }
 
-  // Check if already started (incomplete attempt)
   const [existingAttempt] = await db
     .select()
     .from(examAttemptsTable)
@@ -92,7 +88,6 @@ router.post("/exams/:id/start", requireAuth, requireRole("student"), async (req,
     return;
   }
 
-  // New attempt
   const mcqs = await db.select().from(mcqsTable).where(eq(mcqsTable.examId, examId));
   if (mcqs.length === 0) {
     res.status(400).json({ error: "No questions uploaded for this exam" });
@@ -239,6 +234,15 @@ router.post("/exams/:id/publish", requireAuth, requireRole("faculty", "admin"), 
   if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }
   await db.update(examsTable).set({ isActive: true }).where(eq(examsTable.id, examId));
   res.json({ success: true, message: "Exam published" });
+});
+
+// Unpublish exam
+router.post("/exams/:id/unpublish", requireAuth, requireRole("faculty", "admin"), async (req, res): Promise<void> => {
+  const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
+  if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }
+  await db.update(examsTable).set({ isActive: false }).where(eq(examsTable.id, examId));
+  res.json({ success: true, message: "Exam unpublished" });
 });
 
 export default router;
