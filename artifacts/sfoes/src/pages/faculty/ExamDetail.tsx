@@ -53,6 +53,23 @@ export function FacultyExamDetail() {
     setIsPublishing(false);
   };
 
+  const handleUnpublish = async () => {
+    setIsPublishing(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`https://examapi-chi.vercel.app/api/exams/${examId}/unpublish`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error("Failed to unpublish");
+      queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
+      toast({ title: "Exam unpublished!" });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+    setIsPublishing(false);
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -199,7 +216,9 @@ export function FacultyExamDetail() {
           <CardContent className="space-y-4">
             <div className="flex justify-between items-center pb-2 border-b border-gray-100">
               <span className="text-gray-500 text-sm">Status</span>
-              <Badge variant={exam.isActive ? "default" : "secondary"}>{exam.isActive ? "Active" : "Draft"}</Badge>
+              <Badge variant={exam.isActive ? "default" : "secondary"}>
+                {exam.isActive ? "Active" : "Draft"}
+              </Badge>
             </div>
             <div className="flex justify-between items-center pb-2 border-b border-gray-100">
               <span className="text-gray-500 text-sm">Duration</span>
@@ -215,6 +234,7 @@ export function FacultyExamDetail() {
                 {mcqs.length} uploaded
               </span>
             </div>
+
             {!exam.isActive && mcqs.length >= exam.totalQuestions && (
               <Button
                 className="w-full mt-2"
@@ -222,6 +242,17 @@ export function FacultyExamDetail() {
                 disabled={isPublishing}
               >
                 {isPublishing ? "Publishing..." : "🚀 Publish Exam"}
+              </Button>
+            )}
+
+            {exam.isActive && (
+              <Button
+                className="w-full mt-2"
+                variant="outline"
+                onClick={handleUnpublish}
+                disabled={isPublishing}
+              >
+                {isPublishing ? "Processing..." : "⏸ Unpublish Exam"}
               </Button>
             )}
           </CardContent>
