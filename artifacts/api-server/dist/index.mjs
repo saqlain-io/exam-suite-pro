@@ -56763,6 +56763,53 @@ router3.delete("/admin/users/:id", requireAuth, requireRole("admin"), async (req
   await db.delete(usersTable).where(eq(usersTable.id, id));
   res.json({ success: true, message: "Deleted" });
 });
+router3.post("/admin/users/bulk-import", requireAuth, requireRole("admin"), async (req, res) => {
+  const { students } = req.body;
+  if (!Array.isArray(students) || students.length === 0) {
+    res.status(400).json({ error: "students array required" });
+    return;
+  }
+  const results = { success: 0, failed: 0, errors: [] };
+  for (const s of students) {
+    try {
+      if (!s.username || !s.name || !s.password || !s.programId || !s.yearId) {
+        results.failed++;
+        results.errors.push(`Row ${s.username || "?"}: Missing required fields`);
+        continue;
+      }
+      const passwordHash = hashPassword(String(s.password));
+      await db.insert(usersTable).values({
+        username: String(s.username),
+        name: String(s.name),
+        passwordHash,
+        role: "student",
+        programId: Number(s.programId),
+        yearId: Number(s.yearId),
+        rollNumber: s.rollNumber ? String(s.rollNumber) : null
+      });
+      results.success++;
+    } catch (err) {
+      results.failed++;
+      results.errors.push(`${s.username}: ${err.message}`);
+    }
+  }
+  res.json(results);
+});
+router3.post("/admin/users/:id/reset-password", requireAuth, requireRole("admin"), async (req, res) => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const { newPassword } = req.body;
+  if (!newPassword) {
+    res.status(400).json({ error: "newPassword required" });
+    return;
+  }
+  const passwordHash = hashPassword(newPassword);
+  const [user] = await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, id)).returning();
+  if (!user) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+  res.json({ success: true, message: "Password reset successfully" });
+});
 router3.get("/admin/live-exams", requireAuth, requireRole("admin"), async (req, res) => {
   const attempts = await db.select({
     attemptId: examAttemptsTable.id,
@@ -56784,8 +56831,8 @@ router3.get("/admin/live-exams", requireAuth, requireRole("admin"), async (req, 
   })));
 });
 router3.get("/admin/results", requireAuth, requireRole("admin"), async (req, res) => {
-  const { examId, programId } = req.query;
-  let baseQuery = db.select({
+  const { examId } = req.query;
+  const results = await db.select({
     id: examAttemptsTable.id,
     studentId: examAttemptsTable.studentId,
     studentName: usersTable.name,
@@ -56799,11 +56846,7 @@ router3.get("/admin/results", requireAuth, requireRole("admin"), async (req, res
     submissionReason: examAttemptsTable.submissionReason,
     submittedAt: examAttemptsTable.submittedAt
   }).from(examAttemptsTable).leftJoin(usersTable, eq(examAttemptsTable.studentId, usersTable.id)).leftJoin(examsTable, eq(examAttemptsTable.examId, examsTable.id)).leftJoin(subjectsTable, eq(examsTable.subjectId, subjectsTable.id)).leftJoin(programsTable, eq(examsTable.programId, programsTable.id)).where(eq(examAttemptsTable.isCompleted, true)).orderBy(sql`${examAttemptsTable.submittedAt} DESC`);
-  const results = await baseQuery;
-  const filtered = results.filter((r) => {
-    if (examId && r.examId !== Number(examId)) return false;
-    return true;
-  });
+  const filtered = examId ? results.filter((r) => r.examId === Number(examId)) : results;
   res.json(filtered.map((r) => ({
     ...r,
     percentage: r.score != null && r.totalQuestions ? parseFloat((r.score / r.totalQuestions * 100).toFixed(1)) : 0

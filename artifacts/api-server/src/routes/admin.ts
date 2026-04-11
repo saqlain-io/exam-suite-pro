@@ -58,7 +58,7 @@ router.get("/admin/dashboard", requireAuth, requireRole("admin"), async (req, re
   });
 });
 
-// Years (public — needed for student login page)
+// Years
 router.get("/admin/years", async (_req, res): Promise<void> => {
   const years = await db.select().from(yearsTable).orderBy(yearsTable.value);
   res.json(years);
@@ -66,10 +66,7 @@ router.get("/admin/years", async (_req, res): Promise<void> => {
 
 router.post("/admin/years", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
   const { label, value } = req.body;
-  if (!label || value == null) {
-    res.status(400).json({ error: "label and value required" });
-    return;
-  }
+  if (!label || value == null) { res.status(400).json({ error: "label and value required" }); return; }
   const [year] = await db.insert(yearsTable).values({ label, value: Number(value) }).returning();
   res.status(201).json(year);
 });
@@ -96,10 +93,7 @@ router.get("/admin/programs", requireAuth, async (_req, res): Promise<void> => {
 
 router.post("/admin/programs", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
   const { name, code, description } = req.body;
-  if (!name || !code) {
-    res.status(400).json({ error: "name and code required" });
-    return;
-  }
+  if (!name || !code) { res.status(400).json({ error: "name and code required" }); return; }
   const [program] = await db.insert(programsTable).values({ name, code, description }).returning();
   res.status(201).json(program);
 });
@@ -139,7 +133,6 @@ const subjectSelectFields = {
 
 router.get("/admin/subjects", requireAuth, async (req, res): Promise<void> => {
   const { programId, semesterId, facultyId } = req.query;
-
   const conditions = [];
   if (programId) conditions.push(eq(subjectsTable.programId, Number(programId)));
   if (semesterId) conditions.push(eq(subjectsTable.semesterId, Number(semesterId)));
@@ -152,10 +145,7 @@ router.get("/admin/subjects", requireAuth, async (req, res): Promise<void> => {
     .leftJoin(semestersTable, eq(subjectsTable.semesterId, semestersTable.id))
     .leftJoin(facultyUsersAlias, eq(subjectsTable.facultyId, facultyUsersAlias.id));
 
-  const results = conditions.length > 0
-    ? await base.where(and(...conditions))
-    : await base;
-
+  const results = conditions.length > 0 ? await base.where(and(...conditions)) : await base;
   res.json(results);
 });
 
@@ -240,6 +230,54 @@ router.delete("/admin/users/:id", requireAuth, requireRole("admin"), async (req,
   res.json({ success: true, message: "Deleted" });
 });
 
+// Bulk Import Students
+router.post("/admin/users/bulk-import", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
+  const { students } = req.body;
+  if (!Array.isArray(students) || students.length === 0) {
+    res.status(400).json({ error: "students array required" });
+    return;
+  }
+
+  const results = { success: 0, failed: 0, errors: [] as string[] };
+
+  for (const s of students) {
+    try {
+      if (!s.username || !s.name || !s.password || !s.programId || !s.yearId) {
+        results.failed++;
+        results.errors.push(`Row ${s.username || '?'}: Missing required fields`);
+        continue;
+      }
+      const passwordHash = hashPassword(String(s.password));
+      await db.insert(usersTable).values({
+        username: String(s.username),
+        name: String(s.name),
+        passwordHash,
+        role: "student",
+        programId: Number(s.programId),
+        yearId: Number(s.yearId),
+        rollNumber: s.rollNumber ? String(s.rollNumber) : null,
+      });
+      results.success++;
+    } catch (err: any) {
+      results.failed++;
+      results.errors.push(`${s.username}: ${err.message}`);
+    }
+  }
+
+  res.json(results);
+});
+
+// Password Reset
+router.post("/admin/users/:id/reset-password", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const { newPassword } = req.body;
+  if (!newPassword) { res.status(400).json({ error: "newPassword required" }); return; }
+  const passwordHash = hashPassword(newPassword);
+  const [user] = await db.update(usersTable).set({ passwordHash }).where(eq(usersTable.id, id)).returning();
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  res.json({ success: true, message: "Password reset successfully" });
+});
+
 // Live exams
 router.get("/admin/live-exams", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
   const attempts = await db
@@ -270,8 +308,8 @@ router.get("/admin/live-exams", requireAuth, requireRole("admin"), async (req, r
 
 // Results
 router.get("/admin/results", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
-  const { examId, programId } = req.query;
-  let baseQuery = db
+  const { examId } = req.query;
+  const results = await db
     .select({
       id: examAttemptsTable.id,
       studentId: examAttemptsTable.studentId,
@@ -294,11 +332,7 @@ router.get("/admin/results", requireAuth, requireRole("admin"), async (req, res)
     .where(eq(examAttemptsTable.isCompleted, true))
     .orderBy(sql`${examAttemptsTable.submittedAt} DESC`);
 
-  const results = await baseQuery;
-  const filtered = results.filter(r => {
-    if (examId && r.examId !== Number(examId)) return false;
-    return true;
-  });
+  const filtered = examId ? results.filter(r => r.examId === Number(examId)) : results;
 
   res.json(filtered.map(r => ({
     ...r,
