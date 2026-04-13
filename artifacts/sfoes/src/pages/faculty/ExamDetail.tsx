@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { useParams, Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
-import { Upload, ArrowLeft, Trash2, AlertCircle, FileSpreadsheet } from "lucide-react";
+import { Upload, ArrowLeft, Trash2, AlertCircle, FileSpreadsheet, Pencil } from "lucide-react";
 import ExcelJS from "exceljs";
 import Papa from "papaparse";
 import { 
@@ -12,11 +12,13 @@ import {
   McqInputCorrectOption
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export function FacultyExamDetail() {
   const { id } = useParams();
@@ -29,12 +31,54 @@ export function FacultyExamDetail() {
   const { toast } = useToast();
   const [parseError, setParseError] = useState<string | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    durationMinutes: 60,
+    totalQuestions: 50,
+    startTime: "",
+    endTime: "",
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   if (isLoading) return <div className="p-8 text-center">Loading...</div>;
   if (!data) return <div className="p-8 text-center text-red-600">Exam not found</div>;
 
   const { exam, mcqs } = data;
+
+  const openEdit = () => {
+    setEditForm({
+      title: exam.title,
+      durationMinutes: exam.durationMinutes,
+      totalQuestions: exam.totalQuestions,
+      startTime: (exam as any).startTime ? new Date((exam as any).startTime).toISOString().slice(0, 16) : "",
+      endTime: (exam as any).endTime ? new Date((exam as any).endTime).toISOString().slice(0, 16) : "",
+    });
+    setIsEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`https://examapi-chi.vercel.app/api/faculty/exams/${examId}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: editForm.title,
+          durationMinutes: Number(editForm.durationMinutes),
+          totalQuestions: Number(editForm.totalQuestions),
+          startTime: editForm.startTime || null,
+          endTime: editForm.endTime || null,
+        })
+      });
+      if (!res.ok) throw new Error("Failed to update exam");
+      queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
+      toast({ title: "Exam updated successfully!" });
+      setIsEditOpen(false);
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
 
   const handlePublish = async () => {
     setIsPublishing(true);
@@ -63,7 +107,7 @@ export function FacultyExamDetail() {
       });
       if (!res.ok) throw new Error("Failed to unpublish");
       queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
-      toast({ title: "Exam unpublished!" });
+      toast({ title: "Exam moved to draft!" });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }
@@ -202,11 +246,77 @@ export function FacultyExamDetail() {
             <ArrowLeft className="w-5 h-5 text-gray-500" />
           </Link>
         </Button>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold text-gray-900">{exam.title}</h1>
           <p className="text-sm text-gray-500">{exam.programName} - {exam.subjectName}</p>
         </div>
+        <Button variant="outline" onClick={openEdit}>
+          <Pencil className="w-4 h-4 mr-2" /> Edit Exam
+        </Button>
       </div>
+
+      {/* Edit Dialog */}
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Exam Settings</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700">Exam Title</label>
+              <Input
+                value={editForm.title}
+                onChange={(e) => setEditForm({...editForm, title: e.target.value})}
+                className="mt-1"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Duration (Minutes)</label>
+                <Input
+                  type="number"
+                  value={editForm.durationMinutes}
+                  onChange={(e) => setEditForm({...editForm, durationMinutes: Number(e.target.value)})}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">Total Questions Required</label>
+                <Input
+                  type="number"
+                  value={editForm.totalQuestions}
+                  onChange={(e) => setEditForm({...editForm, totalQuestions: Number(e.target.value)})}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Start Time</label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.startTime}
+                  onChange={(e) => setEditForm({...editForm, startTime: e.target.value})}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700">End Time</label>
+                <Input
+                  type="datetime-local"
+                  value={editForm.endTime}
+                  onChange={(e) => setEditForm({...editForm, endTime: e.target.value})}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <Button variant="outline" onClick={() => setIsEditOpen(false)}>Cancel</Button>
+              <Button onClick={handleSaveEdit}>Save Changes</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="col-span-1 border-gray-200 shadow-sm">
@@ -234,25 +344,28 @@ export function FacultyExamDetail() {
                 {mcqs.length} uploaded
               </span>
             </div>
+            {(exam as any).startTime && (
+              <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                <span className="text-gray-500 text-sm">Start</span>
+                <span className="font-medium text-xs">{new Date((exam as any).startTime).toLocaleString()}</span>
+              </div>
+            )}
+            {(exam as any).endTime && (
+              <div className="flex justify-between items-center pb-2 border-b border-gray-100">
+                <span className="text-gray-500 text-sm">End</span>
+                <span className="font-medium text-xs">{new Date((exam as any).endTime).toLocaleString()}</span>
+              </div>
+            )}
 
             {!exam.isActive && mcqs.length >= exam.totalQuestions && (
-              <Button
-                className="w-full mt-2"
-                onClick={handlePublish}
-                disabled={isPublishing}
-              >
+              <Button className="w-full mt-2" onClick={handlePublish} disabled={isPublishing}>
                 {isPublishing ? "Publishing..." : "🚀 Publish Exam"}
               </Button>
             )}
 
             {exam.isActive && (
-              <Button
-                className="w-full mt-2"
-                variant="outline"
-                onClick={handleUnpublish}
-                disabled={isPublishing}
-              >
-                {isPublishing ? "Processing..." : "⏸ Unpublish Exam"}
+              <Button className="w-full mt-2" variant="outline" onClick={handleUnpublish} disabled={isPublishing}>
+                {isPublishing ? "Processing..." : "⏸ Move to Draft"}
               </Button>
             )}
           </CardContent>
@@ -283,7 +396,7 @@ export function FacultyExamDetail() {
                 {bulkMut.isPending ? "Uploading..." : "Upload CSV / Excel"}
               </Button>
               <div className="text-sm text-gray-500 flex-1">
-                Upload a file with columns: <code className="bg-gray-100 px-1 py-0.5 rounded">questionNumber</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">questionText</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">optionA-D</code>, <code className="bg-gray-100 px-1 py-0.5 rounded">correctOption</code>
+                Columns: <code className="bg-gray-100 px-1 py-0.5 rounded">questionNumber, questionText, optionA-D, correctOption</code>
               </div>
               <Button variant="outline" onClick={downloadTemplate} size="sm">
                 <FileSpreadsheet className="w-4 h-4 mr-2" /> Template
