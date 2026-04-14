@@ -56924,7 +56924,7 @@ router4.post("/faculty/exams", requireAuth, requireRole("admin", "faculty"), asy
     semesterId: Number(semesterId),
     yearId: yearId ? Number(yearId) : null,
     durationMinutes: Number(durationMinutes || 30),
-    totalQuestions: Number(totalQuestions || 100),
+    totalQuestions: Number(totalQuestions || 50),
     isActive: isActive !== void 0 ? Boolean(isActive) : false,
     startTime: startTime ? new Date(startTime) : null,
     endTime: endTime ? new Date(endTime) : null
@@ -56956,6 +56956,22 @@ router4.get("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"), 
   const mcqs = await db.select().from(mcqsTable).where(eq(mcqsTable.examId, id)).orderBy(mcqsTable.questionNumber);
   res.json({ exam: { ...exam, mcqCount: mcqs.length }, mcqs });
 });
+router4.put("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"), async (req, res) => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const { title, durationMinutes, totalQuestions, startTime, endTime } = req.body;
+  const [exam] = await db.update(examsTable).set({
+    title,
+    durationMinutes: Number(durationMinutes),
+    totalQuestions: Number(totalQuestions),
+    startTime: startTime ? new Date(startTime) : null,
+    endTime: endTime ? new Date(endTime) : null
+  }).where(eq(examsTable.id, id)).returning();
+  if (!exam) {
+    res.status(404).json({ error: "Exam not found" });
+    return;
+  }
+  res.json(exam);
+});
 router4.delete("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"), async (req, res) => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   await db.delete(mcqsTable).where(eq(mcqsTable.examId, id));
@@ -56971,6 +56987,16 @@ router4.post("/exams/:id/publish", requireAuth, requireRole("faculty", "admin"),
   }
   await db.update(examsTable).set({ isActive: true }).where(eq(examsTable.id, examId));
   res.json({ success: true, message: "Exam published" });
+});
+router4.post("/exams/:id/unpublish", requireAuth, requireRole("faculty", "admin"), async (req, res) => {
+  const examId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [exam] = await db.select().from(examsTable).where(eq(examsTable.id, examId));
+  if (!exam) {
+    res.status(404).json({ error: "Exam not found" });
+    return;
+  }
+  await db.update(examsTable).set({ isActive: false }).where(eq(examsTable.id, examId));
+  res.json({ success: true, message: "Exam unpublished" });
 });
 router4.post("/faculty/exams/:id/mcqs/bulk", requireAuth, requireRole("admin", "faculty"), async (req, res) => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
