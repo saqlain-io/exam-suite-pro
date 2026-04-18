@@ -64,28 +64,34 @@ export function FacultyExamDetail() {
   setIsEditOpen(true);
 };
   const handleSaveEdit = async () => {
-    try {
-      const token = localStorage.getItem('auth_token');
-      const res = await fetch(`https://examapi-chi.vercel.app/api/faculty/exams/${examId}`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: editForm.title,
-          durationMinutes: Number(editForm.durationMinutes),
-          totalQuestions: Number(editForm.totalQuestions),
-          startTime: editForm.startTime || null,
-          endTime: editForm.endTime || null,
-        })
-      });
-      if (!res.ok) throw new Error("Failed to update exam");
-      queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
-      toast({ title: "Exam updated successfully!" });
-      setIsEditOpen(false);
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    }
-  };
+  try {
+    const token = localStorage.getItem('auth_token');
+    
+    // Convert local datetime to UTC ISO string
+    const toUTC = (localStr: string) => {
+      if (!localStr) return null;
+      return new Date(localStr).toISOString();
+    };
 
+    const res = await fetch(`https://examapi-chi.vercel.app/api/faculty/exams/${examId}`, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: editForm.title,
+        durationMinutes: Number(editForm.durationMinutes),
+        totalQuestions: Number(editForm.totalQuestions),
+        startTime: toUTC(editForm.startTime),
+        endTime: toUTC(editForm.endTime),
+      })
+    });
+    if (!res.ok) throw new Error("Failed to update exam");
+    queryClient.invalidateQueries({ queryKey: getGetExamByIdQueryKey(examId) });
+    toast({ title: "Exam updated successfully!" });
+    setIsEditOpen(false);
+  } catch (err: any) {
+    toast({ title: "Error", description: err.message, variant: "destructive" });
+  }
+};
   const handlePublish = async () => {
     setIsPublishing(true);
     try {
