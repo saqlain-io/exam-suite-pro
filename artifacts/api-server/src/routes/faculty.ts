@@ -5,6 +5,19 @@ import { requireAuth, requireRole } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
+// Helper: Convert Pakistan time string to UTC Date
+function pkTimeToUTC(timeStr: string | null | undefined): Date | null {
+  if (!timeStr) return null;
+  // If already has timezone info, use as is
+  if (timeStr.includes('+') || timeStr.includes('Z')) {
+    return new Date(timeStr);
+  }
+  // Assume Pakistan time (UTC+5), subtract 5 hours
+  const d = new Date(timeStr);
+  d.setHours(d.getHours() - 5);
+  return d;
+}
+
 // Faculty dashboard
 router.get("/faculty/dashboard", requireAuth, requireRole("admin", "faculty"), async (req, res): Promise<void> => {
   const [[examsRow], [mcqsRow], [activeRow]] = await Promise.all([
@@ -103,8 +116,8 @@ router.post("/faculty/exams", requireAuth, requireRole("admin", "faculty"), asyn
     durationMinutes: Number(durationMinutes || 30),
     totalQuestions: Number(totalQuestions || 50),
     isActive: isActive !== undefined ? Boolean(isActive) : false,
-    startTime: startTime ? new Date(startTime) : null,
-    endTime: endTime ? new Date(endTime) : null,
+    startTime: pkTimeToUTC(startTime),
+    endTime: pkTimeToUTC(endTime),
   }).returning();
   res.status(201).json({ ...exam, mcqCount: 0 });
 });
@@ -149,8 +162,8 @@ router.put("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"), a
     title,
     durationMinutes: Number(durationMinutes),
     totalQuestions: Number(totalQuestions),
-    startTime: startTime ? new Date(startTime) : null,
-    endTime: endTime ? new Date(endTime) : null,
+    startTime: pkTimeToUTC(startTime),
+    endTime: pkTimeToUTC(endTime),
   }).where(eq(examsTable.id, id)).returning();
   if (!exam) { res.status(404).json({ error: "Exam not found" }); return; }
   res.json(exam);

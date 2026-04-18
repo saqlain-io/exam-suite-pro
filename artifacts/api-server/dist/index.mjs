@@ -56366,6 +56366,7 @@ var examsTable = pgTable("exams", {
   yearId: integer("year_id"),
   durationMinutes: integer("duration_minutes").notNull().default(30),
   totalQuestions: integer("total_questions").notNull().default(100),
+  marksPerQuestion: integer("marks_per_question").notNull().default(1),
   isActive: boolean("is_active").notNull().default(true),
   startTime: timestamp("start_time", { withTimezone: true }),
   endTime: timestamp("end_time", { withTimezone: true }),
@@ -56857,6 +56858,15 @@ var admin_default = router3;
 // src/routes/faculty.ts
 var import_express4 = __toESM(require_express2(), 1);
 var router4 = (0, import_express4.Router)();
+function pkTimeToUTC(timeStr) {
+  if (!timeStr) return null;
+  if (timeStr.includes("+") || timeStr.includes("Z")) {
+    return new Date(timeStr);
+  }
+  const d = new Date(timeStr);
+  d.setHours(d.getHours() - 5);
+  return d;
+}
 router4.get("/faculty/dashboard", requireAuth, requireRole("admin", "faculty"), async (req, res) => {
   const [[examsRow], [mcqsRow], [activeRow]] = await Promise.all([
     db.select({ cnt: count() }).from(examsTable),
@@ -56926,8 +56936,8 @@ router4.post("/faculty/exams", requireAuth, requireRole("admin", "faculty"), asy
     durationMinutes: Number(durationMinutes || 30),
     totalQuestions: Number(totalQuestions || 50),
     isActive: isActive !== void 0 ? Boolean(isActive) : false,
-    startTime: startTime ? new Date(startTime) : null,
-    endTime: endTime ? new Date(endTime) : null
+    startTime: pkTimeToUTC(startTime),
+    endTime: pkTimeToUTC(endTime)
   }).returning();
   res.status(201).json({ ...exam, mcqCount: 0 });
 });
@@ -56963,8 +56973,8 @@ router4.put("/faculty/exams/:id", requireAuth, requireRole("admin", "faculty"), 
     title,
     durationMinutes: Number(durationMinutes),
     totalQuestions: Number(totalQuestions),
-    startTime: startTime ? new Date(startTime) : null,
-    endTime: endTime ? new Date(endTime) : null
+    startTime: pkTimeToUTC(startTime),
+    endTime: pkTimeToUTC(endTime)
   }).where(eq(examsTable.id, id)).returning();
   if (!exam) {
     res.status(404).json({ error: "Exam not found" });
