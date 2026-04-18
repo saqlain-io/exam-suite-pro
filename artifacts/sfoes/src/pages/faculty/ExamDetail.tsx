@@ -46,17 +46,23 @@ export function FacultyExamDetail() {
 
   const { exam, mcqs } = data;
 
-  const openEdit = () => {
-    setEditForm({
-      title: exam.title,
-      durationMinutes: exam.durationMinutes,
-      totalQuestions: exam.totalQuestions,
-      startTime: (exam as any).startTime ? new Date((exam as any).startTime).toISOString().slice(0, 16) : "",
-      endTime: (exam as any).endTime ? new Date((exam as any).endTime).toISOString().slice(0, 16) : "",
-    });
-    setIsEditOpen(true);
+ const openEdit = () => {
+  const toLocalInput = (dateStr: any) => {
+    if (!dateStr) return "";
+    const d = new Date(dateStr);
+    const offset = d.getTimezoneOffset();
+    const local = new Date(d.getTime() - offset * 60000);
+    return local.toISOString().slice(0, 16);
   };
-
+  setEditForm({
+    title: exam.title,
+    durationMinutes: exam.durationMinutes,
+    totalQuestions: exam.totalQuestions,
+    startTime: toLocalInput((exam as any).startTime),
+    endTime: toLocalInput((exam as any).endTime),
+  });
+  setIsEditOpen(true);
+};
   const handleSaveEdit = async () => {
     try {
       const token = localStorage.getItem('auth_token');
