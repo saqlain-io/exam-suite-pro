@@ -1,80 +1,64 @@
-import { useEffect } from "react";
+import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Building2, GraduationCap } from "lucide-react";
+import { Building2, GraduationCap, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  useStudentLogin, 
-  useGetStudentPrograms, 
-  useGetYears, 
-  useGetStudentList 
-} from "@workspace/api-client-react";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 
 const studentLoginSchema = z.object({
-  programId: z.number().min(1, "Program is required"),
-  yearId: z.number().min(1, "Academic Year is required"),
-  studentId: z.number().min(1, "Student selection is required"),
+  rollNumber: z.string().min(1, "Roll number is required"),
+  password: z.string().min(1, "Password is required"),
 });
 
 export function StudentLogin() {
   const [, setLocation] = useLocation();
   const { login } = useAuth();
   const { toast } = useToast();
-  const loginMutation = useStudentLogin();
-
-  const { data: programs } = useGetStudentPrograms();
-  const { data: years } = useGetYears();
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const form = useForm<z.infer<typeof studentLoginSchema>>({
     resolver: zodResolver(studentLoginSchema),
-    defaultValues: {
-      programId: 0,
-      yearId: 0,
-      studentId: 0,
-    },
+    defaultValues: { rollNumber: "", password: "" },
   });
 
-  const programId = form.watch("programId");
-  const yearId = form.watch("yearId");
+  const onSubmit = async (data: z.infer<typeof studentLoginSchema>) => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("https://examapi-chi.vercel.app/api/auth/student-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rollNumber: data.rollNumber, password: data.password }),
+      });
 
-  const { data: students, isLoading: isLoadingStudents } = useGetStudentList(
-    { programId, yearId },
-    { 
-      query: { 
-        enabled: programId > 0 && yearId > 0 
-      } 
-    }
-  );
+      const result = await res.json();
 
-  // Reset student selection when program or year changes
-  useEffect(() => {
-    form.setValue("studentId", 0);
-  }, [programId, yearId, form]);
-
-  const onSubmit = (data: z.infer<typeof studentLoginSchema>) => {
-    loginMutation.mutate(
-      { data },
-      {
-        onSuccess: (res) => {
-          login(res.user, res.token);
-          setLocation("/student");
-        },
-        onError: (err: any) => {
-          toast({
-            title: "Login Failed",
-            description: err?.message || err?.data?.message || "Could not authenticate student",
-            variant: "destructive",
-          });
-        },
+      if (!res.ok) {
+        toast({
+          title: "Login Failed",
+          description: result.message || "Invalid roll number or password",
+          variant: "destructive",
+        });
+        return;
       }
-    );
+
+      login(result.user, result.token);
+      setLocation("/student");
+    } catch (err: any) {
+      toast({
+        title: "Login Failed",
+        description: "Network error. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -91,7 +75,7 @@ export function StudentLogin() {
         <Card className="border-gray-200 shadow-xl shadow-gray-200/50">
           <CardHeader className="space-y-1 text-center border-b border-gray-100 bg-white rounded-t-xl pb-6">
             <CardTitle className="text-xl">Student Login</CardTitle>
-            <CardDescription>Select your details to access exams</CardDescription>
+            <CardDescription>Enter your roll number and password</CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
             <Form {...form}>
@@ -99,27 +83,17 @@ export function StudentLogin() {
                 
                 <FormField
                   control={form.control}
-                  name="programId"
+                  name="rollNumber"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Program</FormLabel>
-                      <Select 
-                        onValueChange={(val) => field.onChange(parseInt(val, 10))} 
-                        value={field.value ? field.value.toString() : ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-program">
-                            <SelectValue placeholder="Select Program" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {programs?.map((p) => (
-                            <SelectItem key={p.id} value={p.id.toString()}>
-                              {p.name} ({p.code})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Roll Number</FormLabel>
+                      <FormControl>
+                        <Input 
+                          {...field} 
+                          placeholder="e.g. GBSN-2026-001"
+                          autoComplete="username"
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -127,60 +101,29 @@ export function StudentLogin() {
 
                 <FormField
                   control={form.control}
-                  name="yearId"
+                  name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Academic Year</FormLabel>
-                      <Select 
-                        onValueChange={(val) => field.onChange(parseInt(val, 10))} 
-                        value={field.value ? field.value.toString() : ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-year">
-                            <SelectValue placeholder="Select Year" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {years?.map((y) => (
-                            <SelectItem key={y.id} value={y.id.toString()}>
-                              {y.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="studentId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Student Name</FormLabel>
-                      <Select 
-                        onValueChange={(val) => field.onChange(parseInt(val, 10))} 
-                        value={field.value ? field.value.toString() : ""}
-                        disabled={!programId || !yearId || isLoadingStudents || !students?.length}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-student">
-                            <SelectValue placeholder={
-                              !programId || !yearId ? "Select Program & Year first" :
-                              isLoadingStudents ? "Loading students..." : 
-                              students?.length ? "Select your name" : "No students found"
-                            } />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {students?.map((s) => (
-                            <SelectItem key={s.id} value={s.id.toString()}>
-                              {s.name} {s.rollNumber ? `(${s.rollNumber})` : ''}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input 
+                            {...field}
+                            type={showPassword ? "text" : "password"}
+                            placeholder="Enter your password"
+                            autoComplete="current-password"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-0 top-0 h-full px-3"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </Button>
+                        </div>
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -189,21 +132,23 @@ export function StudentLogin() {
                 <Button 
                   type="submit" 
                   className="w-full mt-6" 
-                  disabled={loginMutation.isPending || !form.watch("studentId")}
-                  data-testid="button-student-login"
+                  disabled={isLoading}
                 >
                   <GraduationCap className="w-4 h-4 mr-2" />
-                  {loginMutation.isPending ? "Entering..." : "Enter Portal"}
+                  {isLoading ? "Logging in..." : "Student Login"}
                 </Button>
               </form>
             </Form>
           </CardContent>
-          <CardFooter className="flex justify-center border-t border-gray-100 pt-6">
+          <CardFooter className="flex flex-col gap-3 border-t border-gray-100 pt-6">
             <p className="text-sm text-gray-600">
               Staff member?{" "}
               <Link href="/login" className="font-semibold text-blue-600 hover:text-blue-500">
                 Staff Login
               </Link>
+            </p>
+            <p className="text-xs text-gray-400 text-center">
+              Forgot password? Contact your administrator to reset it.
             </p>
           </CardFooter>
         </Card>
