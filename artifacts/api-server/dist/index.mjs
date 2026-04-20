@@ -56488,6 +56488,10 @@ router2.post("/auth/login", async (req, res) => {
     res.status(401).json({ error: "Unauthorized", message: "Invalid credentials" });
     return;
   }
+  if (user.role === "student") {
+    res.status(401).json({ error: "Unauthorized", message: "Students must use student login" });
+    return;
+  }
   const token = generateToken(user.id, user.role);
   res.json({
     user: {
@@ -56504,22 +56508,18 @@ router2.post("/auth/login", async (req, res) => {
   });
 });
 router2.post("/auth/student-login", async (req, res) => {
-  const { studentId, programId, yearId } = req.body;
-  if (!studentId) {
-    res.status(400).json({ error: "Bad Request", message: "studentId required" });
+  const { rollNumber, password } = req.body;
+  if (!rollNumber || !password) {
+    res.status(400).json({ error: "Bad Request", message: "Roll number and password required" });
     return;
   }
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, Number(studentId)));
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.rollNumber, String(rollNumber)));
   if (!user || user.role !== "student") {
     res.status(401).json({ error: "Unauthorized", message: "Student not found" });
     return;
   }
-  if (programId && user.programId !== Number(programId)) {
-    res.status(401).json({ error: "Unauthorized", message: "Student not in this program" });
-    return;
-  }
-  if (yearId && user.yearId !== Number(yearId)) {
-    res.status(401).json({ error: "Unauthorized", message: "Student not in this year" });
+  if (!verifyPassword(password, user.passwordHash)) {
+    res.status(401).json({ error: "Unauthorized", message: "Invalid password" });
     return;
   }
   const token = generateToken(user.id, user.role);
